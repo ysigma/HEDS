@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, claude/sigma-data-explorer-plugin-bh1p7n]
   workflow_dispatch:
 
 permissions:
@@ -29,6 +29,11 @@ jobs:
           # Keep the asset base path in sync with whatever the repo is named.
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
       - uses: actions/configure-pages@v5
+        # Turn on Pages (workflow build type) if it isn't already enabled, so
+        # deployment needs no manual Settings step. Requires a public repo on
+        # the free tier.
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
