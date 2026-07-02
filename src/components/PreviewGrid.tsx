@@ -75,6 +75,8 @@ export function PreviewGrid({
       <h2 className="pane-title">Preview</h2>
       {columns.length === 0 ? (
         <p className="pane-hint">Select columns to preview rows.</p>
+      ) : data === undefined ? (
+        <p className="pane-hint">Loading rows…</p>
       ) : loadedRowCount === 0 ? (
         <p className="pane-hint">The data source has no rows.</p>
       ) : (
