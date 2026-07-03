@@ -11,7 +11,8 @@ element. Attach a table and the plugin builds itself:
 - **Right pane — "Choose columns".** An auto-generated column picker sourced
   live from the attached element: a "Column name contains" search box, a
   select-all checkbox, and a compact checkbox list of every column with a muted
-  type badge. The selection is written to a workbook text control as JSON.
+  type badge. The filtered table (selected columns and their rows) is written
+  to a workbook text control as JSON.
 - **Footer bar.** Applied-filter chips, a live selected-column count, a
   "Clear all" link, and the primary **Run** button, which fires whichever
   workbook action sequence is attached to the plugin's action trigger.
@@ -42,7 +43,7 @@ Other scripts: `npm run build` (typecheck + production build), `npm test`
 | Data source (`source`) | element | The workbook table/element to explore. Everything else derives from it. |
 | Filter 1–6 column (`filter{n}Column`) | column | A text, number, integer or boolean column from the data source you want a dropdown for. |
 | Filter 1–6 control (`filter{n}Control`) | variable | The workbook control that dropdown should drive. Use a list control (text list, number list) for multi-select; scalar controls fall back to single-select. |
-| Selected columns control (`selectedColumnsControl`) | variable | A workbook **text** control that receives the chosen columns as a JSON string. |
+| Selected columns control (`selectedColumnsControl`) | variable | A workbook **text** control that receives the filtered table (selected columns and rows) as a JSON string. |
 | On run (`runAction`) | action trigger | The workbook action sequence to fire when the user clicks Run. |
 | In-plugin filtering mode (`inPluginFiltering`) | toggle | Off (default) = Mode A, control-wired. On = Mode B, self-contained filtering with a preview grid. |
 | Max distinct values per dropdown (`maxDistinctValues`) | text | Cap on dropdown list length. Defaults to 1000; invalid input falls back to the default. |
@@ -56,26 +57,39 @@ why each slot pairs a column with a pre-existing control.
 > v1 — the slot columns are limited to text, number, integer and boolean
 > types.
 
-## The selected-columns contract
+## The output contract
 
-On every change to the column picker (and again immediately before the run
-action fires), the plugin writes this exact JSON shape to the mapped text
-control:
+On every change (and again immediately before the run action fires), the
+plugin serializes the **filtered table** — the selected columns and their row
+values — to the mapped text control:
 
 ```json
-{"columns":["Column Name 1","Column Name 2"]}
+{
+  "columns": ["Region", "Sales"],
+  "rows": [
+    { "Region": "East", "Sales": 10 },
+    { "Region": "West", "Sales": 20 }
+  ],
+  "rowCount": 2,
+  "truncated": false
+}
 ```
 
-- Values are the columns' **display names**.
-- Order is stable and matches the element's column order, not click order.
-- Columns that have been removed from the source element are dropped
-  automatically.
+- `columns` lists the selected columns' **display names**, in the element's
+  column order (not click order).
+- `rows` are objects keyed by those display names; missing values are `null`.
+- Rows reflect the current filters — in Mode A the element is already narrowed
+  by the workbook controls; in Mode B the in-plugin filters apply.
+- Rows are capped (default 1,000) to stay within a control's size limit.
+  `rowCount` is the full filtered count and `truncated` is `true` when the cap
+  dropped rows. (Row data is also bounded by the SDK's 25,000-value window.)
+- Columns removed from the source element are dropped automatically.
 
 The selected column **ids** are also persisted into the plugin config
 (`client.config.set`), so the selection survives reloads even if column names
 or their order change.
 
-> **If the columns aren't being saved:** map a workbook text control to the
+> **If the table isn't being saved:** map a workbook text control to the
 > "Selected columns control" field in the editor panel. While it is unmapped
 > the plugin shows an inline notice and skips the write; once mapped, the JSON
 > is written on load and on every change.
@@ -83,16 +97,15 @@ or their order change.
 ### Consuming the output from an action sequence
 
 A typical wiring: the "On run" action sequence reads the text control's value
-(the JSON string above) and passes it onward — for example as a VARCHAR
-argument to a warehouse stored procedure, which can parse the array and build
-a dynamic projection. Any downstream step that can read a workbook control can
-consume it.
+(the JSON above) and passes it onward — for example as a VARCHAR argument to a
+warehouse stored procedure that parses the table and populates a report
+template. Any downstream step that can read a workbook control can consume it.
 
 The plugin cannot observe the action sequence's outcome. Clicking Run shows an
 "Action sequence triggered" toast; completion or errors surface in the
 workbook itself. If nothing is attached to the "On run" trigger, Run still
-writes the selected columns to the control and shows a "No run action is
-configured" toast instead.
+writes the table to the control and shows a "No run action is configured"
+toast instead.
 
 ## Mode A vs Mode B
 

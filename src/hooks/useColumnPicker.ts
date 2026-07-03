@@ -4,7 +4,6 @@ import {
   type WorkbookElementColumn,
   type WorkbookElementColumns,
 } from '@sigmacomputing/plugin';
-import { buildSelectedColumnsPayload } from '../lib/payload';
 
 export interface ColumnPicker {
   /** All columns of the attached element, in element order. */
@@ -15,15 +14,13 @@ export interface ColumnPicker {
   setColumnSelected(columnId: string, selected: boolean): void;
   setManySelected(columnIds: readonly string[], selected: boolean): void;
   clearSelection(): void;
-  /** The exact JSON string for the selected-columns control. */
-  payload: string;
 }
 
 /**
  * Column selection state for the right pane. The list itself always comes from
- * `useElementColumns`; the selection is kept locally, persisted into the
- * plugin config (so it survives reloads), and pushed to the mapped workbook
- * control as a JSON payload on every change.
+ * `useElementColumns`; the selection is kept locally and persisted into the
+ * plugin config (so it survives reloads). The JSON payload written to the
+ * control is derived by the caller, which has the row data in hand.
  */
 export function useColumnPicker(
   columnsById: WorkbookElementColumns | undefined,
@@ -46,14 +43,9 @@ export function useColumnPicker(
     return new Set([...base].filter((id) => valid.has(id)));
   }, [localIds, persistedIds, columns]);
 
-  const payload = useMemo(
-    () => buildSelectedColumnsPayload(columns, selectedIds),
-    [columns, selectedIds],
-  );
-
   // Persist the selected ids so the picker restores after a reload. The JSON
-  // payload is written to the workbook control by the caller, keyed on the
-  // derived `payload` value, so there is a single writer for that control.
+  // payload is derived and written to the control by the caller (which holds
+  // the row data), so there is a single writer for that control.
   const commit = useCallback(
     (next: ReadonlySet<string>) => {
       setLocalIds(next);
@@ -101,6 +93,5 @@ export function useColumnPicker(
     setColumnSelected,
     setManySelected,
     clearSelection,
-    payload,
   };
 }

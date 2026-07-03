@@ -14,6 +14,7 @@ import { useColumnPicker } from './hooks/useColumnPicker';
 import { useFilterSlot, type FilterSlot } from './hooks/useFilterSlots';
 import { parseMaxDistinctValues } from './lib/distinct';
 import { filterRowIndexes, getRowCount } from './lib/filterRows';
+import { buildTablePayload } from './lib/payload';
 import { ColumnPane } from './components/ColumnPane';
 import { FilterPane } from './components/FilterPane';
 import { FooterBar, type FilterChip } from './components/FooterBar';
@@ -64,12 +65,6 @@ export default function App() {
     : undefined;
   const picker = useColumnPicker(columnsById, persistedIds);
 
-  // Keep the mapped control in sync with the current selection — on load (so a
-  // restored selection is reflected immediately) and on every change.
-  useEffect(() => {
-    writePayload(picker.payload);
-  }, [writePayload, picker.payload]);
-
   // Filter slots. The slot count is a compile-time constant, so these hook
   // calls are unconditional and stable across renders.
   const slot1 = useFilterSlot(1, config, columnsById, data, maxDistinct, inPluginFiltering);
@@ -85,6 +80,44 @@ export default function App() {
       ),
     [slot1, slot2, slot3, slot4, slot5, slot6],
   );
+
+  // Mode B: filter loaded rows in memory. The selected columns drive both the
+  // preview grid and the JSON payload.
+  const rowFilters = useMemo(
+    () =>
+      slots.map((slot) => ({
+        columnId: slot.column.id,
+        selectedKeys: slot.selectedKeys,
+      })),
+    [slots],
+  );
+  const filteredRowIndexes = useMemo(
+    () => (inPluginFiltering ? filterRowIndexes(data, rowFilters) : []),
+    [inPluginFiltering, data, rowFilters],
+  );
+  const selectedColumns = useMemo(
+    () => picker.columns.filter((column) => picker.selectedIds.has(column.id)),
+    [picker.columns, picker.selectedIds],
+  );
+
+  // JSON payload: the filtered table (selected columns × rows). In Mode A the
+  // element data is already narrowed by the workbook controls, so every loaded
+  // row is included; in Mode B the in-plugin-filtered rows are used.
+  const allRowIndexes = useMemo(() => {
+    const count = getRowCount(data);
+    return Array.from({ length: count }, (_, index) => index);
+  }, [data]);
+  const payloadRowIndexes = inPluginFiltering ? filteredRowIndexes : allRowIndexes;
+  const payload = useMemo(
+    () => buildTablePayload(selectedColumns, data, payloadRowIndexes),
+    [selectedColumns, data, payloadRowIndexes],
+  );
+
+  // Keep the mapped control in sync with the filtered table — on load and on
+  // every selection, filter or data change.
+  useEffect(() => {
+    writePayload(payload);
+  }, [writePayload, payload]);
 
   // Run flow. useActionTrigger, like useVariable, takes the value stored for
   // the config field (see Sigma's actions-sample-plugin:
@@ -111,21 +144,21 @@ export default function App() {
 
   const handleRun = useCallback(() => {
     if (runDisabledReason !== null) return;
-    // Make sure the control holds the latest selection before the action
-    // sequence reads it.
-    writePayload(picker.payload);
+    // Make sure the control holds the latest table before the action sequence
+    // reads it.
+    writePayload(payload);
     if (runActionId) {
       triggerRunAction();
       showToast('Action sequence triggered');
     } else {
       // Nothing is attached to the "On run" trigger, so there's no sequence to
-      // fire — the columns are still written to the mapped control.
+      // fire — the table is still written to the mapped control.
       showToast('No run action is configured');
     }
   }, [
     runDisabledReason,
     writePayload,
-    picker.payload,
+    payload,
     runActionId,
     triggerRunAction,
     showToast,
@@ -135,24 +168,6 @@ export default function App() {
     for (const slot of slots) slot.clear();
     picker.clearSelection();
   }, [slots, picker]);
-
-  // Mode B: filter loaded rows in memory.
-  const rowFilters = useMemo(
-    () =>
-      slots.map((slot) => ({
-        columnId: slot.column.id,
-        selectedKeys: slot.selectedKeys,
-      })),
-    [slots],
-  );
-  const filteredRowIndexes = useMemo(
-    () => (inPluginFiltering ? filterRowIndexes(data, rowFilters) : []),
-    [inPluginFiltering, data, rowFilters],
-  );
-  const selectedColumns = useMemo(
-    () => picker.columns.filter((column) => picker.selectedIds.has(column.id)),
-    [picker.columns, picker.selectedIds],
-  );
 
   // Warn once the user has picked columns but no output control is mapped, so
   // the JSON has nowhere to go. A short delay avoids flashing during the
