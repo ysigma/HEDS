@@ -45,6 +45,10 @@ export default function App() {
     () => parseMetadata(metaColumns, metaData),
     [metaColumns, metaData],
   );
+  const metaColumnIds = useMemo(
+    () => (metaColumns ? Object.values(metaColumns).map((column) => column.id) : []),
+    [metaColumns],
+  );
 
   // Fixed data-source slots (unconditional hook calls).
   const slot1 = useDataSlot(1, config);
@@ -72,6 +76,21 @@ export default function App() {
   );
 
   const plugin = usePluginSetter();
+
+  // Stream the metadata table's data by declaring all its columns (Sigma sends
+  // data only for declared columns). Plugin-managed, like each data slot.
+  const currentMetaCols = config?.metadataColumns;
+  useEffect(() => {
+    if (metaSource === '' || metaColumnIds.length === 0) return;
+    const current = Array.isArray(currentMetaCols)
+      ? (currentMetaCols as string[])
+      : [];
+    const same =
+      current.length === metaColumnIds.length &&
+      metaColumnIds.every((id) => current.includes(id));
+    if (!same) plugin.set({ metadataColumns: metaColumnIds });
+  }, [metaSource, metaColumnIds, currentMetaCols, plugin]);
+
   const assign = useCallback(
     (elementName: string, slotKey: string) => {
       const next: SectionAssignments = { ...assignments };

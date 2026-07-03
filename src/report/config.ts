@@ -27,6 +27,15 @@ export interface ReportConfig {
 function buildEditorPanel(): CustomPluginConfigOptions[] {
   const fields: CustomPluginConfigOptions[] = [
     { name: 'metadata', type: 'element', label: 'Template metadata table' },
+    {
+      // Plugin-managed: filled with all of the metadata table's columns so
+      // Sigma streams its row data (data flows only for declared columns).
+      name: 'metadataColumns',
+      type: 'column',
+      source: 'metadata',
+      allowMultiple: true,
+      label: 'Metadata columns',
+    },
   ];
   for (let slot = 1; slot <= DATA_SLOT_COUNT; slot += 1) {
     fields.push({
