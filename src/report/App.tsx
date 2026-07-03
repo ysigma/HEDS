@@ -22,6 +22,7 @@ import {
   resolveSection,
   type ResolvedSection,
 } from './payload';
+import { autoMatchSource, type MatchableSource } from './match';
 import { useDataSlot, type DataSlot } from './hooks';
 import { allRowIndexes } from '../lib/filterRows';
 import { Toast } from '../components/Toast';
@@ -93,20 +94,38 @@ export default function App() {
 
   const assign = useCallback(
     (elementName: string, slotKey: string) => {
-      const next: SectionAssignments = { ...assignments };
-      if (slotKey === '') delete next[elementName];
-      else next[elementName] = slotKey;
-      plugin.set({ assignments: next });
+      // Persist the choice, including '' meaning "explicitly none".
+      plugin.set({ assignments: { ...assignments, [elementName]: slotKey } });
     },
     [assignments, plugin],
   );
 
-  // Resolve each assigned section against its data source.
+  // Auto-match sources to sections by columns (element names aren't exposed by
+  // the SDK). A manual assignment, when present, overrides the auto choice.
+  const matchableSources = useMemo<MatchableSource[]>(
+    () =>
+      attachedSlots.map((slot) => ({
+        key: dataSlotKey(slot.slot),
+        columns: slot.columns,
+      })),
+    [attachedSlots],
+  );
+  const effectiveKeyFor = useCallback(
+    (elementName: string, auto: string | null): string | null => {
+      const manual = assignments[elementName];
+      if (manual !== undefined) return manual === '' ? null : manual;
+      return auto;
+    },
+    [assignments],
+  );
+
+  // Resolve each section against its effective (manual or auto-matched) source.
   const resolved = useMemo<ResolvedSection[]>(() => {
     return sections.flatMap((section) => {
-      const slotKey = assignments[section.elementName];
-      if (!slotKey) return [];
-      const slot = slotByKey.get(slotKey);
+      const auto = autoMatchSource(section, matchableSources);
+      const key = effectiveKeyFor(section.elementName, auto);
+      if (!key) return [];
+      const slot = slotByKey.get(key);
       if (!slot || !slot.attached) return [];
       return [
         resolveSection(
@@ -117,7 +136,7 @@ export default function App() {
         ),
       ];
     });
-  }, [sections, assignments, slotByKey]);
+  }, [sections, matchableSources, effectiveKeyFor, slotByKey]);
 
   const payload = useMemo(() => buildReportPayload(resolved), [resolved]);
   const prettyPayload = useMemo(() => {
@@ -228,41 +247,48 @@ export default function App() {
             </p>
           )}
           <div className="section-list">
-            {sections.map((section) => (
-              <div className="section-row" key={section.elementName}>
-                <div className="section-head">
-                  <span className="section-name" title={section.elementName}>
-                    {section.elementName}
-                  </span>
-                  <span className="type-badge">
-                    {section.elementType || 'unknown'}
-                  </span>
+            {sections.map((section) => {
+              const auto = autoMatchSource(section, matchableSources);
+              const manual = assignments[section.elementName];
+              const value = manual !== undefined ? manual : (auto ?? '');
+              const isAuto = manual === undefined && auto !== null;
+              return (
+                <div className="section-row" key={section.elementName}>
+                  <div className="section-head">
+                    <span className="section-name" title={section.elementName}>
+                      {section.elementName}
+                    </span>
+                    <span className="type-badge">
+                      {section.elementType || 'unknown'}
+                    </span>
+                  </div>
+                  <div className="section-meta">
+                    {section.sheetName ?? '—'}
+                    {section.tableRef
+                      ? ` · ${section.tableRef}`
+                      : section.cellRef
+                        ? ` · ${section.cellRef}`
+                        : ''}
+                    {isAuto ? ' · auto-matched' : ''}
+                  </div>
+                  <select
+                    className="section-select"
+                    aria-label={`Data source for ${section.elementName}`}
+                    value={value}
+                    onChange={(event) =>
+                      assign(section.elementName, event.target.value)
+                    }
+                  >
+                    <option value="">— no data source —</option>
+                    {attachedSlots.map((slot) => (
+                      <option key={slot.slot} value={dataSlotKey(slot.slot)}>
+                        {sourceLabel(slot)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <div className="section-meta">
-                  {section.sheetName ?? '—'}
-                  {section.tableRef
-                    ? ` · ${section.tableRef}`
-                    : section.cellRef
-                      ? ` · ${section.cellRef}`
-                      : ''}
-                </div>
-                <select
-                  className="section-select"
-                  aria-label={`Data source for ${section.elementName}`}
-                  value={assignments[section.elementName] ?? ''}
-                  onChange={(event) =>
-                    assign(section.elementName, event.target.value)
-                  }
-                >
-                  <option value="">— no data source —</option>
-                  {attachedSlots.map((slot) => (
-                    <option key={slot.slot} value={dataSlotKey(slot.slot)}>
-                      Data source {slot.slot}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
         <section className="pane json-pane" aria-label="Output preview">
@@ -295,6 +321,14 @@ export default function App() {
       <Toast message={toast} />
     </div>
   );
+}
+
+/** Labels a data source by its columns (the SDK doesn't expose element names). */
+function sourceLabel(slot: DataSlot): string {
+  if (slot.columns.length === 0) return `Data source ${slot.slot} (loading…)`;
+  const names = slot.columns.map((column) => column.name);
+  const shown = names.slice(0, 4).join(', ');
+  return names.length > 4 ? `${shown} +${names.length - 4}` : shown;
 }
 
 /** Small wrapper so the config setter is stable and typed. */
