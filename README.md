@@ -156,6 +156,35 @@ src/
 All Sigma-host interaction stays behind the hooks so the pure logic in `lib/`
 is testable without a workbook.
 
+## Report builder (second plugin)
+
+A separate, metadata-driven plugin lives under `src/report/` and builds to
+`/report/` (registered in Sigma as its own plugin, e.g.
+`https://<owner>.github.io/<repo>/report/`). It assembles a report payload for
+a downstream stored procedure that populates a template.
+
+- **Template metadata table** (`metadata`) — a table describing the template:
+  Element Name, Element Type (NAMED_RANGE / TABLE), Sheet Name, Cell Ref, Table
+  Ref and Columns Required. It defines the sections the payload must contain
+  (columns are matched by name, so order and extra columns don't matter).
+- **Data sources** (`data1`–`data5`) — the elements holding the actual data.
+  Each section **auto-matches** to the source whose columns fit (tables by
+  their required columns, named ranges by the element-name column), since the
+  SDK doesn't expose element names; a manual pick overrides.
+- **Output** — flat JSON keyed by element name: named ranges serialize as a
+  scalar, tables as an array of row objects whose keys match Columns Required
+  exactly (null for empty/missing cells, `[]` for an empty table):
+
+  ```json
+  { "FundName": "Janus…", "TopHoldings": [ { "ISIN": "…", "Weight": 4.1 } ] }
+  ```
+
+  Placement (sheet/cell/table refs) is not carried in the payload — the stored
+  procedure reads it from the metadata table, joining on the element name.
+
+Pure logic (`src/report/metadata.ts`, `payload.ts`, `match.ts`) is unit-tested
+in `src/report/__tests__`.
+
 ## License
 
 [MIT](./LICENSE)
