@@ -51,7 +51,12 @@ export function useFilterSlot(
   maxValues: number,
   inPluginFiltering: boolean,
 ): FilterSlot | null {
-  const [variable, setVariable] = useVariable(slotControlKey(slot));
+  // useVariable takes the *value* stored for the control field — the mapped
+  // control's variable id — not the field name (see Sigma's
+  // control-api-demo-plugin: `useVariable(config.quarter)`).
+  const controlValue = config?.[slotControlKey(slot)];
+  const controlId = typeof controlValue === 'string' ? controlValue : '';
+  const [variable, setVariable] = useVariable(controlId);
   const [localSelection, setLocalSelection] = useState<FilterValue[]>([]);
 
   const rawColumn = config?.[slotColumnKey(slot)];
@@ -61,8 +66,7 @@ export function useFilterSlot(
       : Array.isArray(rawColumn) && typeof rawColumn[0] === 'string'
         ? rawColumn[0]
         : undefined;
-  const controlValue = config?.[slotControlKey(slot)];
-  const controlMapped = controlValue !== undefined && controlValue !== null && controlValue !== '';
+  const controlMapped = controlId !== '';
   const column = columnId && columnsById ? columnsById[columnId] : undefined;
 
   const selected = useMemo<FilterValue[]>(
