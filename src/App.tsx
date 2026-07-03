@@ -42,20 +42,20 @@ export default function App() {
     setLoadingState(false);
   }, [setLoadingState]);
 
-  // Selected-columns control wiring. Write whenever the "Selected columns
-  // control" field is mapped in the editor panel. We deliberately do NOT wait
-  // for the control's value to resolve: a freshly mapped, still-empty control
-  // reports no value yet, but the setter targets it by config id and works
-  // regardless. Gating on the read value would wrongly block a valid mapping.
-  const [, setSelectedColumnsControl] = useVariable('selectedColumnsControl');
-  const selectedColumnsControlMapped =
-    config?.selectedColumnsControl != null &&
-    config.selectedColumnsControl !== '';
+  // Selected-columns control wiring. The host publishes a variable only for a
+  // control it can resolve (with its current value, which may be null for an
+  // empty control). An undefined value therefore means the "Selected columns
+  // control" field is unmapped or points at a control that was removed or
+  // recreated — writing to it then raises a host "variable not found" error.
+  // Only write once the control has resolved, and surface a notice otherwise.
+  const [selectedColumnsVar, setSelectedColumnsControl] =
+    useVariable('selectedColumnsControl');
+  const selectedColumnsControlReady = selectedColumnsVar !== undefined;
   const writePayload = useCallback(
     (payload: string) => {
-      if (selectedColumnsControlMapped) setSelectedColumnsControl(payload);
+      if (selectedColumnsControlReady) setSelectedColumnsControl(payload);
     },
-    [selectedColumnsControlMapped, setSelectedColumnsControl],
+    [selectedColumnsControlReady, setSelectedColumnsControl],
   );
 
   const persistedIds = Array.isArray(config?.selectedColumnIds)
@@ -132,22 +132,23 @@ export default function App() {
     [picker.columns, picker.selectedIds],
   );
 
-  // Warn once the user has picked columns but no output control is mapped, so
-  // the JSON isn't being captured anywhere. A short delay avoids flashing the
-  // notice during the initial config hydration.
-  const columnsControlMissing =
+  // Warn once the user has picked columns but the output control can't be
+  // reached — genuinely unmapped or stale, not just mid-hydration. A short
+  // delay keeps the notice from flashing for a valid control, which resolves
+  // within a tick.
+  const columnsControlUnavailable =
     picker.columns.length > 0 &&
     picker.selectedCount > 0 &&
-    !selectedColumnsControlMapped;
+    !selectedColumnsControlReady;
   const [showColumnsControlNotice, setShowColumnsControlNotice] =
     useState(false);
   useEffect(() => {
     const timer = window.setTimeout(
-      () => setShowColumnsControlNotice(columnsControlMissing),
-      columnsControlMissing ? 700 : 0,
+      () => setShowColumnsControlNotice(columnsControlUnavailable),
+      columnsControlUnavailable ? 700 : 0,
     );
     return () => window.clearTimeout(timer);
-  }, [columnsControlMissing]);
+  }, [columnsControlUnavailable]);
 
   const chips: FilterChip[] = slots
     .filter((slot) => slot.selected.length > 0)
@@ -182,8 +183,10 @@ export default function App() {
     <div className="app" style={rootStyle}>
       {showColumnsControlNotice && (
         <div className="notice" role="status">
-          The selected columns aren't being saved. Map a text control to the
-          "Selected columns control" field in the editor panel.
+          The selected columns aren't being saved — the mapped control can't be
+          reached. Map (or re-map) a text control to the "Selected columns
+          control" field in the editor panel; if you recreated the control,
+          re-select it here.
         </div>
       )}
       <main
