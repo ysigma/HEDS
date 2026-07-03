@@ -1,45 +1,41 @@
 import type { CustomPluginConfigOptions } from '@sigmacomputing/plugin';
-import type { FilterValue } from './lib/distinct';
-
-/** A single in-plugin filter, persisted into the workbook via `client.config.set`. */
-export interface StoredFilter {
-  columnId: string;
-  values: FilterValue[];
-}
 
 /** Plugin-local state persisted into the workbook via `client.config.set`. */
 export interface PersistedState {
   selectedColumnIds?: string[];
-  filters?: StoredFilter[];
 }
 
 /** Values Sigma stores for the editor panel fields declared below. */
 export interface ExplorerConfig extends PersistedState {
   source?: string;
+  /** Column ids the data source exposes to the plugin (a `column` config). */
+  columns?: string[];
   selectedColumnsControl?: string;
   runAction?: string;
-  maxDistinctValues?: string;
   [key: string]: unknown;
 }
 
 /**
- * Single source of truth for the editor panel. Filtering happens inside the
- * plugin (the builder picks filter columns in the plugin, not here), so the
- * panel only needs the data source, the output control, the run action, and
- * the dropdown cap — no per-filter fields.
+ * Single source of truth for the editor panel.
+ *
+ * `columns` is required: Sigma only streams data for columns declared to the
+ * plugin, so the builder maps it (typically "select all") to make the source's
+ * columns available. Filtering is left to the workbook's own controls — the
+ * plugin reads whatever the element is already filtered to.
  */
 export const EDITOR_PANEL_CONFIG: CustomPluginConfigOptions[] = [
   { name: 'source', type: 'element', label: 'Data source' },
+  {
+    name: 'columns',
+    type: 'column',
+    source: 'source',
+    allowMultiple: true,
+    label: 'Columns',
+  },
   {
     name: 'selectedColumnsControl',
     type: 'variable',
     label: 'Output control (text)',
   },
   { name: 'runAction', type: 'action-trigger', label: 'On run' },
-  {
-    name: 'maxDistinctValues',
-    type: 'text',
-    label: 'Max distinct values per dropdown',
-    defaultValue: '1000',
-  },
 ];

@@ -6,7 +6,7 @@ import {
 } from '@sigmacomputing/plugin';
 
 export interface ColumnPicker {
-  /** All columns of the attached element, in element order. */
+  /** The columns exposed to the plugin, in element order. */
   columns: WorkbookElementColumn[];
   selectedIds: ReadonlySet<string>;
   selectedCount: number;
@@ -17,35 +17,43 @@ export interface ColumnPicker {
 }
 
 /**
- * Column selection state for the right pane. The list itself always comes from
- * `useElementColumns`; the selection is kept locally and persisted into the
- * plugin config (so it survives reloads). The JSON payload written to the
- * control is derived by the caller, which has the row data in hand.
+ * Column selection for the picker. The available columns are those the data
+ * source exposes to the plugin (the `columns` config); everything is selected
+ * by default until the user narrows it. The selection is kept locally and
+ * persisted into the plugin config so it survives reloads. The JSON payload is
+ * derived and written by the caller, which holds the row data.
  */
 export function useColumnPicker(
   columnsById: WorkbookElementColumns | undefined,
+  availableColumnIds: readonly string[] | undefined,
   persistedIds: readonly string[] | undefined,
 ): ColumnPicker {
   const plugin = usePlugin();
   const [localIds, setLocalIds] = useState<ReadonlySet<string> | undefined>();
 
-  const columns = useMemo(
-    () => (columnsById ? Object.values(columnsById) : []),
-    [columnsById],
-  );
+  // Only expose columns the source has declared to the plugin, in element order.
+  const columns = useMemo(() => {
+    if (!columnsById || !availableColumnIds) return [];
+    const available = new Set(availableColumnIds);
+    return Object.values(columnsById).filter((column) =>
+      available.has(column.id),
+    );
+  }, [columnsById, availableColumnIds]);
 
-  // Local edits win over the persisted selection. Ids whose columns no longer
-  // exist on the source element are dropped silently.
+  // Default to every available column selected; once the user edits, their
+  // persisted choice takes over. Local edits win and ids are pruned to what's
+  // still available.
   const selectedIds = useMemo<ReadonlySet<string>>(() => {
-    const base = localIds ?? new Set(persistedIds ?? []);
-    if (columns.length === 0) return base; // don't prune before columns arrive
+    const base =
+      localIds ??
+      (persistedIds != null
+        ? new Set(persistedIds)
+        : new Set(columns.map((column) => column.id)));
+    if (columns.length === 0) return base;
     const valid = new Set(columns.map((column) => column.id));
     return new Set([...base].filter((id) => valid.has(id)));
   }, [localIds, persistedIds, columns]);
 
-  // Persist the selected ids so the picker restores after a reload. The JSON
-  // payload is derived and written to the control by the caller (which holds
-  // the row data), so there is a single writer for that control.
   const commit = useCallback(
     (next: ReadonlySet<string>) => {
       setLocalIds(next);

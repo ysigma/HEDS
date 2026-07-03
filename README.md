@@ -4,24 +4,21 @@ A [Sigma Computing workbook plugin](https://help.sigmacomputing.com/docs/plugin-
 that recreates a classic "data explorer" experience on top of any Sigma data
 element. Attach a table and the plugin builds itself:
 
-- **Left pane — "Set parameters".** Add a filter on any column with **+ Add
-  filter**, then pick values from a searchable multi-select dropdown of that
-  column's distinct values. Filtering happens inside the plugin — no workbook
-  controls to wire up. Filter columns are chosen here and persist with the
-  workbook.
-- **Middle pane — "Preview".** A compact, virtualised grid of the selected
-  columns and the filtered rows — a live view of the data that becomes the JSON
-  output.
-- **Right pane — "Choose columns".** An auto-generated column picker sourced
-  live from the attached element: a "Column name contains" search box, a
-  select-all checkbox, and a compact checkbox list of every column with a muted
-  type badge.
-- **Footer bar.** Applied-filter chips, a live selected-column count, a
-  "Clear all" link, and the primary **Run** button, which fires whichever
-  workbook action sequence is attached to the plugin's action trigger.
+- **Left pane — "Choose columns".** An auto-generated column picker of the
+  columns the source exposes to the plugin: a "Column name contains" search
+  box, a select-all checkbox, and a compact checkbox list with a muted type
+  badge. Everything is selected by default; narrow it to shape the output.
+- **Right pane — "Preview".** A compact, virtualised grid of the selected
+  columns and the rows — a live view of the data that becomes the JSON output.
+- **Footer bar.** A live selected-column and row count, a "Clear all" link, and
+  the primary **Run** button, which fires whichever workbook action sequence is
+  attached to the plugin's action trigger.
 
-The filtered table (selected columns and their rows) is written to a workbook
-text control as JSON for an action sequence to hand onward.
+**Filtering is left to the workbook.** The plugin reads whatever the element is
+already filtered to (by native Sigma controls, table filters, etc.), so the
+rows it previews and exports reflect the workbook's current state. The selected
+columns and their rows are written to a workbook text control as JSON for an
+action sequence to hand onward.
 
 The plugin is a fully static Vite + React + TypeScript app built on
 [`@sigmacomputing/plugin`](https://github.com/sigmacomputing/plugin). It makes
@@ -47,15 +44,15 @@ Other scripts: `npm run build` (typecheck + production build), `npm test`
 | Field | Type | Map it to |
 | --- | --- | --- |
 | Data source (`source`) | element | The workbook table/element to explore. Everything else derives from it. |
-| Output control (`selectedColumnsControl`) | variable | A workbook **text** control that receives the filtered table (selected columns and rows) as a JSON string. |
+| Columns (`columns`) | column (multiple) | The source columns to make available to the plugin — **select all** to expose the whole table. |
+| Output control (`selectedColumnsControl`) | variable | A workbook **text** control that receives the selected columns and rows as a JSON string. |
 | On run (`runAction`) | action trigger | The workbook action sequence to fire when the user clicks Run. |
-| Max distinct values per dropdown (`maxDistinctValues`) | text | Cap on filter dropdown list length. Defaults to 1000; invalid input falls back to the default. |
 
-There are **no per-filter fields** — filter columns are chosen inside the
-plugin (**+ Add filter**) and persist in the plugin config, so adding or
-changing a filter never means editing the panel. Filtering runs in the plugin,
-so no workbook controls are needed for it (plugins can't create controls at
-runtime, and this model avoids the pairing entirely).
+The **Columns** field is required because **Sigma only streams the plugin data
+for the columns declared to it** — a column the plugin can't see has no values
+to preview or export. Mapping it once (select all) exposes the table; the
+in-plugin picker then chooses which of those columns land in the output. There
+are no per-filter fields: filtering is handled by the workbook's own controls.
 
 ## The output contract
 
@@ -78,12 +75,13 @@ values — to the mapped text control:
 - `columns` lists the selected columns' **display names**, in the element's
   column order (not click order).
 - `rows` are objects keyed by those display names; missing values are `null`.
-- Rows reflect the current in-plugin filters (a row must match every filter
-  that has a selection).
+- Rows are whatever the workbook has the element filtered to — the plugin
+  reads the already-filtered data.
 - Rows are capped (default 1,000) to stay within a control's size limit.
-  `rowCount` is the full filtered count and `truncated` is `true` when the cap
+  `rowCount` is the full row count and `truncated` is `true` when the cap
   dropped rows. (Row data is also bounded by the SDK's 25,000-value window.)
-- Columns removed from the source element are dropped automatically.
+- Columns removed from the source (or from the Columns field) drop out
+  automatically.
 
 The selected column **ids** are also persisted into the plugin config
 (`client.config.set`), so the selection survives reloads even if column names
@@ -107,22 +105,18 @@ workbook itself. If nothing is attached to the "On run" trigger, Run still
 writes the table to the control and shows a "No run action is configured"
 toast instead.
 
-## How filtering works
+## Filtering
 
-Filtering is **in-plugin**: the selected values narrow the fetched rows in
-memory, and those rows feed the preview grid and the JSON output. This keeps
-the setup to zero workbook controls, at two trade-offs:
+Filtering is **the workbook's job**, not the plugin's. Add native Sigma
+controls (list values, date ranges, etc.) or table filters to the source
+element; the plugin reads the element's already-filtered data through the SDK
+and previews/exports exactly those rows. This keeps the plugin to a single
+responsibility — pick columns, preview, export — and gives you Sigma's full
+filtering power (including cascading and warehouse pushdown) for free.
 
-- It does **not** filter the underlying element or affect other workbook
-  elements — the plugin produces an output, it doesn't drive the workbook.
-- It's bounded by the rows the plugin has fetched. The element data hooks load
-  up to 25,000 values per column; the preview offers **Load more rows** to
-  fetch further chunks, and the row-count indicator notes the chunking.
-
-Filter dropdowns show each column's distinct values (deduped, sorted, capped by
-*Max distinct values per dropdown*, with a truncation note when capped). If you
-need warehouse-side filtering that propagates to the whole workbook, use
-Sigma's native controls alongside the plugin.
+The plugin's data is bounded by the rows the SDK has fetched (up to 25,000
+values per column); the preview offers **Load more rows** to fetch further
+chunks, and the row-count indicator notes the chunking.
 
 ## Deploying
 
@@ -152,13 +146,11 @@ src/
   main.tsx                  SigmaClientProvider wrapper
   App.tsx                   layout, output-control + run wiring
   config.ts                 editor panel declaration (single source of truth)
-  hooks/useFilters.ts       in-plugin filters: add/remove, distinct values,
-                            persistence, row filtering
-  hooks/useColumnPicker.ts  column list, selection, persistence
-  components/               FilterPane, AddFilterMenu, ColumnPane, PreviewGrid,
-                            FooterBar, MultiSelectDropdown, VirtualList, Toast
-  lib/                      pure logic: distinct values, payload, row filtering,
-                            filter reconciliation — unit-tested in lib/__tests__
+  hooks/useColumnPicker.ts  exposed columns, selection, persistence
+  components/               ColumnPane, PreviewGrid, FooterBar, VirtualList,
+                            Toast
+  lib/                      pure logic: table payload, row helpers —
+                            unit-tested in lib/__tests__
 ```
 
 All Sigma-host interaction stays behind the hooks so the pure logic in `lib/`

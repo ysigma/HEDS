@@ -1,25 +1,18 @@
-export interface FilterChip {
-  id: string;
-  label: string;
-  count: number;
-  onClear(): void;
-}
-
 interface FooterBarProps {
-  chips: FilterChip[];
   selectedCount: number;
   totalColumns: number;
+  rowCount: number;
   canClear: boolean;
   runDisabledReason: string | null;
   onClearAll(): void;
   onRun(): void;
 }
 
-/** Footer: applied-filter chips, selection count, clear all, and Run. */
+/** Footer: selection + row summary, clear all, and the primary Run button. */
 export function FooterBar({
-  chips,
   selectedCount,
   totalColumns,
+  rowCount,
   canClear,
   runDisabledReason,
   onClearAll,
@@ -28,21 +21,9 @@ export function FooterBar({
   return (
     <footer className="footer-bar">
       <div className="footer-status">
-        {chips.map((chip) => (
-          <span className="chip" key={chip.id}>
-            {chip.label} ({chip.count})
-            <button
-              type="button"
-              className="chip-clear"
-              aria-label={`Clear ${chip.label} filter`}
-              onClick={chip.onClear}
-            >
-              ×
-            </button>
-          </span>
-        ))}
         <span className="footer-count">
-          {selectedCount} of {totalColumns} columns selected
+          {selectedCount} of {totalColumns} columns selected ·{' '}
+          {rowCount.toLocaleString()} {rowCount === 1 ? 'row' : 'rows'}
         </span>
       </div>
       <div className="footer-actions">
@@ -51,7 +32,7 @@ export function FooterBar({
           className="link-button"
           onClick={onClearAll}
           disabled={!canClear}
-          title="Clear all filters and column selections"
+          title="Clear the column selection"
         >
           Clear all
         </button>
