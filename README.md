@@ -4,18 +4,24 @@ A [Sigma Computing workbook plugin](https://help.sigmacomputing.com/docs/plugin-
 that recreates a classic "data explorer" experience on top of any Sigma data
 element. Attach a table and the plugin builds itself:
 
-- **Left pane — "Set parameters".** One searchable multi-select dropdown per
-  configured filter slot, labelled with the mapped column's name and populated
-  with that column's distinct values. Selections are pushed into mapped
-  workbook controls, so the rest of the workbook filters along with the plugin.
+- **Left pane — "Set parameters".** Add a filter on any column with **+ Add
+  filter**, then pick values from a searchable multi-select dropdown of that
+  column's distinct values. Filtering happens inside the plugin — no workbook
+  controls to wire up. Filter columns are chosen here and persist with the
+  workbook.
+- **Middle pane — "Preview".** A compact, virtualised grid of the selected
+  columns and the filtered rows — a live view of the data that becomes the JSON
+  output.
 - **Right pane — "Choose columns".** An auto-generated column picker sourced
   live from the attached element: a "Column name contains" search box, a
   select-all checkbox, and a compact checkbox list of every column with a muted
-  type badge. The filtered table (selected columns and their rows) is written
-  to a workbook text control as JSON.
+  type badge.
 - **Footer bar.** Applied-filter chips, a live selected-column count, a
   "Clear all" link, and the primary **Run** button, which fires whichever
   workbook action sequence is attached to the plugin's action trigger.
+
+The filtered table (selected columns and their rows) is written to a workbook
+text control as JSON for an action sequence to hand onward.
 
 The plugin is a fully static Vite + React + TypeScript app built on
 [`@sigmacomputing/plugin`](https://github.com/sigmacomputing/plugin). It makes
@@ -41,21 +47,15 @@ Other scripts: `npm run build` (typecheck + production build), `npm test`
 | Field | Type | Map it to |
 | --- | --- | --- |
 | Data source (`source`) | element | The workbook table/element to explore. Everything else derives from it. |
-| Filter 1–6 column (`filter{n}Column`) | column | A text, number, integer or boolean column from the data source you want a dropdown for. |
-| Filter 1–6 control (`filter{n}Control`) | variable | The workbook control that dropdown should drive. Use a list control (text list, number list) for multi-select; scalar controls fall back to single-select. |
-| Selected columns control (`selectedColumnsControl`) | variable | A workbook **text** control that receives the filtered table (selected columns and rows) as a JSON string. |
+| Output control (`selectedColumnsControl`) | variable | A workbook **text** control that receives the filtered table (selected columns and rows) as a JSON string. |
 | On run (`runAction`) | action trigger | The workbook action sequence to fire when the user clicks Run. |
-| In-plugin filtering mode (`inPluginFiltering`) | toggle | Off (default) = Mode A, control-wired. On = Mode B, self-contained filtering with a preview grid. |
-| Max distinct values per dropdown (`maxDistinctValues`) | text | Cap on dropdown list length. Defaults to 1000; invalid input falls back to the default. |
+| Max distinct values per dropdown (`maxDistinctValues`) | text | Cap on filter dropdown list length. Defaults to 1000; invalid input falls back to the default. |
 
-A filter slot is **active only when both its column and its control are
-mapped** (in Mode B, only the column is required). Incomplete slots are
-ignored silently. Plugins cannot create workbook controls at runtime, which is
-why each slot pairs a column with a pre-existing control.
-
-> **Date filters:** date-range filtering stays with native Sigma controls in
-> v1 — the slot columns are limited to text, number, integer and boolean
-> types.
+There are **no per-filter fields** — filter columns are chosen inside the
+plugin (**+ Add filter**) and persist in the plugin config, so adding or
+changing a filter never means editing the panel. Filtering runs in the plugin,
+so no workbook controls are needed for it (plugins can't create controls at
+runtime, and this model avoids the pairing entirely).
 
 ## The output contract
 
@@ -78,8 +78,8 @@ values — to the mapped text control:
 - `columns` lists the selected columns' **display names**, in the element's
   column order (not click order).
 - `rows` are objects keyed by those display names; missing values are `null`.
-- Rows reflect the current filters — in Mode A the element is already narrowed
-  by the workbook controls; in Mode B the in-plugin filters apply.
+- Rows reflect the current in-plugin filters (a row must match every filter
+  that has a selection).
 - Rows are capped (default 1,000) to stay within a control's size limit.
   `rowCount` is the full filtered count and `truncated` is `true` when the cap
   dropped rows. (Row data is also bounded by the SDK's 25,000-value window.)
@@ -90,9 +90,9 @@ The selected column **ids** are also persisted into the plugin config
 or their order change.
 
 > **If the table isn't being saved:** map a workbook text control to the
-> "Selected columns control" field in the editor panel. While it is unmapped
-> the plugin shows an inline notice and skips the write; once mapped, the JSON
-> is written on load and on every change.
+> "Output control" field in the editor panel. While it is unmapped the plugin
+> shows an inline notice and skips the write; once mapped, the JSON is written
+> on load and on every change.
 
 ### Consuming the output from an action sequence
 
@@ -107,20 +107,22 @@ workbook itself. If nothing is attached to the "On run" trigger, Run still
 writes the table to the control and shows a "No run action is configured"
 toast instead.
 
-## Mode A vs Mode B
+## How filtering works
 
-| | Mode A — control-wired (default) | Mode B — in-plugin filtering |
-| --- | --- | --- |
-| Where filtering happens | In the warehouse: dropdowns write to workbook controls, controls filter the element. | In the plugin's memory, over the rows fetched so far. |
-| Cascading dropdowns | Free — the filtered element streams back into the plugin, so other dropdowns narrow automatically. | None — dropdowns always show values from the loaded rows. |
-| Affects other workbook elements | Yes, through the shared controls. | No — the underlying element is untouched. |
-| Data volume | Whatever the element resolves to. | Bounded by the SDK's 25,000-value chunks; a "Load more rows" affordance fetches further chunks. |
-| Extra UI | — | A compact preview grid of the selected columns (first 200 filtered rows, virtualised). |
+Filtering is **in-plugin**: the selected values narrow the fetched rows in
+memory, and those rows feed the preview grid and the JSON output. This keeps
+the setup to zero workbook controls, at two trade-offs:
 
-In Mode A the plugin also *reads* each mapped control on load and reflects its
-current value in the dropdown, so plugin state and workbook state stay in sync
-in both directions, and clearing a dropdown clears the control (sets it to
-null) rather than just clearing local state.
+- It does **not** filter the underlying element or affect other workbook
+  elements — the plugin produces an output, it doesn't drive the workbook.
+- It's bounded by the rows the plugin has fetched. The element data hooks load
+  up to 25,000 values per column; the preview offers **Load more rows** to
+  fetch further chunks, and the row-count indicator notes the chunking.
+
+Filter dropdowns show each column's distinct values (deduped, sorted, capped by
+*Max distinct values per dropdown*, with a truncation note when capped). If you
+need warehouse-side filtering that propagates to the whole workbook, use
+Sigma's native controls alongside the plugin.
 
 ## Deploying
 
@@ -148,14 +150,15 @@ iframe-blocking headers — which is what Sigma's iframe embedding requires.
 ```
 src/
   main.tsx                  SigmaClientProvider wrapper
-  App.tsx                   layout + Mode A/B switch
+  App.tsx                   layout, output-control + run wiring
   config.ts                 editor panel declaration (single source of truth)
-  hooks/useFilterSlots.ts   active slots, distinct values, control sync
-  hooks/useColumnPicker.ts  column list, selection, persistence, JSON payload
-  components/               FilterPane, ColumnPane, PreviewGrid (Mode B),
+  hooks/useFilters.ts       in-plugin filters: add/remove, distinct values,
+                            persistence, row filtering
+  hooks/useColumnPicker.ts  column list, selection, persistence
+  components/               FilterPane, AddFilterMenu, ColumnPane, PreviewGrid,
                             FooterBar, MultiSelectDropdown, VirtualList, Toast
-  lib/                      pure logic: distinct values, payload, control
-                            parsing, row filtering — unit-tested in lib/__tests__
+  lib/                      pure logic: distinct values, payload, row filtering,
+                            filter reconciliation — unit-tested in lib/__tests__
 ```
 
 All Sigma-host interaction stays behind the hooks so the pure logic in `lib/`

@@ -1,5 +1,5 @@
 export interface FilterChip {
-  slot: number;
+  id: string;
   label: string;
   count: number;
   onClear(): void;
@@ -29,7 +29,7 @@ export function FooterBar({
     <footer className="footer-bar">
       <div className="footer-status">
         {chips.map((chip) => (
-          <span className="chip" key={chip.slot}>
+          <span className="chip" key={chip.id}>
             {chip.label} ({chip.count})
             <button
               type="button"

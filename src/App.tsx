@@ -11,7 +11,7 @@ import {
 } from '@sigmacomputing/plugin';
 import { EDITOR_PANEL_CONFIG, type ExplorerConfig } from './config';
 import { useColumnPicker } from './hooks/useColumnPicker';
-import { useFilterSlot, type FilterSlot } from './hooks/useFilterSlots';
+import { useFilters } from './hooks/useFilters';
 import { parseMaxDistinctValues } from './lib/distinct';
 import { filterRowIndexes, getRowCount } from './lib/filterRows';
 import { buildTablePayload } from './lib/payload';
@@ -26,7 +26,6 @@ export default function App() {
 
   const config = useConfig() as ExplorerConfig | undefined;
   const source = typeof config?.source === 'string' ? config.source : '';
-  const inPluginFiltering = config?.inPluginFiltering === true;
   const maxDistinct = parseMaxDistinctValues(
     typeof config?.maxDistinctValues === 'string'
       ? config.maxDistinctValues
@@ -43,21 +42,20 @@ export default function App() {
     setLoadingState(false);
   }, [setLoadingState]);
 
-  // Selected-columns control wiring. useVariable takes the *value* stored for
-  // the config field — the mapped control's variable id — not the field name
-  // (see Sigma's control-api-demo-plugin: `useVariable(config.quarter)`).
-  // Passing the field name leaves the host unable to resolve the binding.
-  const selectedColumnsControlId =
+  // Output control wiring. useVariable takes the *value* stored for the config
+  // field — the mapped control's variable id — not the field name (see Sigma's
+  // control-api-demo-plugin: `useVariable(config.quarter)`).
+  const outputControlId =
     typeof config?.selectedColumnsControl === 'string'
       ? config.selectedColumnsControl
       : '';
-  const [, setSelectedColumnsControl] = useVariable(selectedColumnsControlId);
-  const selectedColumnsControlMapped = selectedColumnsControlId !== '';
+  const [, setOutputControl] = useVariable(outputControlId);
+  const outputControlMapped = outputControlId !== '';
   const writePayload = useCallback(
     (payload: string) => {
-      if (selectedColumnsControlMapped) setSelectedColumnsControl(payload);
+      if (outputControlMapped) setOutputControl(payload);
     },
-    [selectedColumnsControlMapped, setSelectedColumnsControl],
+    [outputControlMapped, setOutputControl],
   );
 
   const persistedIds = Array.isArray(config?.selectedColumnIds)
@@ -65,52 +63,22 @@ export default function App() {
     : undefined;
   const picker = useColumnPicker(columnsById, persistedIds);
 
-  // Filter slots. The slot count is a compile-time constant, so these hook
-  // calls are unconditional and stable across renders.
-  const slot1 = useFilterSlot(1, config, columnsById, data, maxDistinct, inPluginFiltering);
-  const slot2 = useFilterSlot(2, config, columnsById, data, maxDistinct, inPluginFiltering);
-  const slot3 = useFilterSlot(3, config, columnsById, data, maxDistinct, inPluginFiltering);
-  const slot4 = useFilterSlot(4, config, columnsById, data, maxDistinct, inPluginFiltering);
-  const slot5 = useFilterSlot(5, config, columnsById, data, maxDistinct, inPluginFiltering);
-  const slot6 = useFilterSlot(6, config, columnsById, data, maxDistinct, inPluginFiltering);
-  const slots = useMemo(
-    () =>
-      [slot1, slot2, slot3, slot4, slot5, slot6].filter(
-        (slot): slot is FilterSlot => slot !== null,
-      ),
-    [slot1, slot2, slot3, slot4, slot5, slot6],
-  );
+  // In-plugin filters: columns chosen inside the plugin, persisted in config.
+  const filters = useFilters(config, columnsById, data, maxDistinct);
 
-  // Mode B: filter loaded rows in memory. The selected columns drive both the
-  // preview grid and the JSON payload.
-  const rowFilters = useMemo(
-    () =>
-      slots.map((slot) => ({
-        columnId: slot.column.id,
-        selectedKeys: slot.selectedKeys,
-      })),
-    [slots],
-  );
   const filteredRowIndexes = useMemo(
-    () => (inPluginFiltering ? filterRowIndexes(data, rowFilters) : []),
-    [inPluginFiltering, data, rowFilters],
+    () => filterRowIndexes(data, filters.rowFilters),
+    [data, filters.rowFilters],
   );
   const selectedColumns = useMemo(
     () => picker.columns.filter((column) => picker.selectedIds.has(column.id)),
     [picker.columns, picker.selectedIds],
   );
 
-  // JSON payload: the filtered table (selected columns × rows). In Mode A the
-  // element data is already narrowed by the workbook controls, so every loaded
-  // row is included; in Mode B the in-plugin-filtered rows are used.
-  const allRowIndexes = useMemo(() => {
-    const count = getRowCount(data);
-    return Array.from({ length: count }, (_, index) => index);
-  }, [data]);
-  const payloadRowIndexes = inPluginFiltering ? filteredRowIndexes : allRowIndexes;
+  // JSON payload: the filtered table (selected columns × filtered rows).
   const payload = useMemo(
-    () => buildTablePayload(selectedColumns, data, payloadRowIndexes),
-    [selectedColumns, data, payloadRowIndexes],
+    () => buildTablePayload(selectedColumns, data, filteredRowIndexes),
+    [selectedColumns, data, filteredRowIndexes],
   );
 
   // Keep the mapped control in sync with the filtered table — on load and on
@@ -165,37 +133,37 @@ export default function App() {
   ]);
 
   const handleClearAll = useCallback(() => {
-    for (const slot of slots) slot.clear();
+    filters.clearAll();
     picker.clearSelection();
-  }, [slots, picker]);
+  }, [filters, picker]);
 
   // Warn once the user has picked columns but no output control is mapped, so
   // the JSON has nowhere to go. A short delay avoids flashing during the
   // initial config hydration.
-  const columnsControlUnmapped =
+  const outputControlMissing =
     picker.columns.length > 0 &&
     picker.selectedCount > 0 &&
-    !selectedColumnsControlMapped;
-  const [showColumnsControlNotice, setShowColumnsControlNotice] =
-    useState(false);
+    !outputControlMapped;
+  const [showOutputNotice, setShowOutputNotice] = useState(false);
   useEffect(() => {
     const timer = window.setTimeout(
-      () => setShowColumnsControlNotice(columnsControlUnmapped),
-      columnsControlUnmapped ? 700 : 0,
+      () => setShowOutputNotice(outputControlMissing),
+      outputControlMissing ? 700 : 0,
     );
     return () => window.clearTimeout(timer);
-  }, [columnsControlUnmapped]);
+  }, [outputControlMissing]);
 
-  const chips: FilterChip[] = slots
-    .filter((slot) => slot.selected.length > 0)
-    .map((slot) => ({
-      slot: slot.slot,
-      label: slot.column.name,
-      count: slot.selected.length,
-      onClear: slot.clear,
+  const chips: FilterChip[] = filters.filters
+    .filter((filter) => filter.selected.length > 0)
+    .map((filter) => ({
+      id: filter.columnId,
+      label: filter.column.name,
+      count: filter.selected.length,
+      onClear: () => filters.setValues(filter.columnId, []),
     }));
 
-  const canClear = chips.length > 0 || picker.selectedCount > 0;
+  const hasFilterSelections = chips.length > 0;
+  const canClear = hasFilterSelections || picker.selectedCount > 0;
 
   const rootStyle = pluginStyle?.backgroundColor
     ? { backgroundColor: pluginStyle.backgroundColor }
@@ -208,7 +176,7 @@ export default function App() {
           <p className="empty-state-title">Attach a table to begin</p>
           <p className="empty-state-hint">
             Select this element, then choose a data source in the editor panel.
-            Filter dropdowns and the column picker fill in automatically.
+            The column picker and filters fill in from the attached table.
           </p>
         </div>
       </div>
@@ -217,26 +185,21 @@ export default function App() {
 
   return (
     <div className="app" style={rootStyle}>
-      {showColumnsControlNotice && (
+      {showOutputNotice && (
         <div className="notice" role="status">
-          The selected columns aren't being saved. Map a text control to the
-          "Selected columns control" field in the editor panel.
+          The output isn't being saved. Map a text control to the "Output
+          control" field in the editor panel.
         </div>
       )}
-      <main
-        className="panes"
-        data-mode={inPluginFiltering ? 'in-plugin' : 'controls'}
-      >
-        <FilterPane slots={slots} inPluginFiltering={inPluginFiltering} />
-        {inPluginFiltering && (
-          <PreviewGrid
-            columns={selectedColumns}
-            data={data}
-            rowIndexes={filteredRowIndexes}
-            loadedRowCount={getRowCount(data)}
-            onLoadMore={loadMore}
-          />
-        )}
+      <main className="panes">
+        <FilterPane filters={filters} />
+        <PreviewGrid
+          columns={selectedColumns}
+          data={data}
+          rowIndexes={filteredRowIndexes}
+          loadedRowCount={getRowCount(data)}
+          onLoadMore={loadMore}
+        />
         <ColumnPane picker={picker} />
       </main>
       <FooterBar
