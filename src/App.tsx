@@ -42,26 +42,32 @@ export default function App() {
     setLoadingState(false);
   }, [setLoadingState]);
 
-  // Selected-columns control wiring. The host only publishes a variable for a
-  // config id it can resolve to a live control, so an undefined value means the
-  // "Selected columns control" field is either unmapped or points at a control
-  // that was removed. Writing in that state triggers a host "variable not found"
-  // error, so we only write once the control has resolved and surface a friendly
-  // notice otherwise.
-  const [selectedColumnsVar, setSelectedColumnsControl] =
-    useVariable('selectedColumnsControl');
-  const selectedColumnsControlReady = selectedColumnsVar !== undefined;
+  // Selected-columns control wiring. Write whenever the "Selected columns
+  // control" field is mapped in the editor panel. We deliberately do NOT wait
+  // for the control's value to resolve: a freshly mapped, still-empty control
+  // reports no value yet, but the setter targets it by config id and works
+  // regardless. Gating on the read value would wrongly block a valid mapping.
+  const [, setSelectedColumnsControl] = useVariable('selectedColumnsControl');
+  const selectedColumnsControlMapped =
+    config?.selectedColumnsControl != null &&
+    config.selectedColumnsControl !== '';
   const writePayload = useCallback(
     (payload: string) => {
-      if (selectedColumnsControlReady) setSelectedColumnsControl(payload);
+      if (selectedColumnsControlMapped) setSelectedColumnsControl(payload);
     },
-    [selectedColumnsControlReady, setSelectedColumnsControl],
+    [selectedColumnsControlMapped, setSelectedColumnsControl],
   );
 
   const persistedIds = Array.isArray(config?.selectedColumnIds)
     ? config.selectedColumnIds
     : undefined;
-  const picker = useColumnPicker(columnsById, persistedIds, writePayload);
+  const picker = useColumnPicker(columnsById, persistedIds);
+
+  // Keep the mapped control in sync with the current selection — on load (so a
+  // restored selection is reflected immediately) and on every change.
+  useEffect(() => {
+    writePayload(picker.payload);
+  }, [writePayload, picker.payload]);
 
   // Filter slots. The slot count is a compile-time constant, so these hook
   // calls are unconditional and stable across renders.
@@ -126,23 +132,22 @@ export default function App() {
     [picker.columns, picker.selectedIds],
   );
 
-  // Warn only once columns have loaded and the user has picked some, but the
-  // selected-columns control still hasn't resolved — i.e. it's genuinely
-  // unmapped or stale, not just mid-hydration. A short delay keeps the notice
-  // from flashing for a valid control, which resolves within a tick.
-  const columnsControlUnavailable =
+  // Warn once the user has picked columns but no output control is mapped, so
+  // the JSON isn't being captured anywhere. A short delay avoids flashing the
+  // notice during the initial config hydration.
+  const columnsControlMissing =
     picker.columns.length > 0 &&
     picker.selectedCount > 0 &&
-    !selectedColumnsControlReady;
+    !selectedColumnsControlMapped;
   const [showColumnsControlNotice, setShowColumnsControlNotice] =
     useState(false);
   useEffect(() => {
     const timer = window.setTimeout(
-      () => setShowColumnsControlNotice(columnsControlUnavailable),
-      columnsControlUnavailable ? 700 : 0,
+      () => setShowColumnsControlNotice(columnsControlMissing),
+      columnsControlMissing ? 700 : 0,
     );
     return () => window.clearTimeout(timer);
-  }, [columnsControlUnavailable]);
+  }, [columnsControlMissing]);
 
   const chips: FilterChip[] = slots
     .filter((slot) => slot.selected.length > 0)
@@ -178,8 +183,7 @@ export default function App() {
       {showColumnsControlNotice && (
         <div className="notice" role="status">
           The selected columns aren't being saved. Map a text control to the
-          "Selected columns control" field in the editor panel — the mapped
-          control may have been removed.
+          "Selected columns control" field in the editor panel.
         </div>
       )}
       <main

@@ -28,7 +28,6 @@ export interface ColumnPicker {
 export function useColumnPicker(
   columnsById: WorkbookElementColumns | undefined,
   persistedIds: readonly string[] | undefined,
-  writePayload: (payload: string) => void,
 ): ColumnPicker {
   const plugin = usePlugin();
   const [localIds, setLocalIds] = useState<ReadonlySet<string> | undefined>();
@@ -52,13 +51,15 @@ export function useColumnPicker(
     [columns, selectedIds],
   );
 
+  // Persist the selected ids so the picker restores after a reload. The JSON
+  // payload is written to the workbook control by the caller, keyed on the
+  // derived `payload` value, so there is a single writer for that control.
   const commit = useCallback(
     (next: ReadonlySet<string>) => {
       setLocalIds(next);
       plugin.config.set({ selectedColumnIds: [...next] });
-      writePayload(buildSelectedColumnsPayload(columns, next));
     },
-    [plugin, columns, writePayload],
+    [plugin],
   );
 
   const isSelected = useCallback(

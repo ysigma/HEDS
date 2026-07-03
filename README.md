@@ -75,11 +75,11 @@ The selected column **ids** are also persisted into the plugin config
 (`client.config.set`), so the selection survives reloads even if column names
 or their order change.
 
-> **If the columns aren't being saved:** the plugin only writes once the
-> mapped control resolves. If the "Selected columns control" field is unmapped
-> — or points at a control that was deleted — the plugin skips the write and
-> shows an inline notice instead of erroring; map (or re-map) a text control to
-> that field to fix it.
+> **If the columns aren't being saved:** the JSON is only written when the
+> "Selected columns control" field is mapped to a workbook text control. If it
+> is unmapped, the plugin skips the write and shows an inline notice; map a
+> text control to that field to capture the output. (The control can start
+> empty — the plugin writes to it by mapping, not by its current value.)
 
 ### Consuming the output from an action sequence
 
