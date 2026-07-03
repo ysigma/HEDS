@@ -86,8 +86,12 @@ export default function App() {
     [slot1, slot2, slot3, slot4, slot5, slot6],
   );
 
-  // Run flow.
-  const triggerRunAction = useActionTrigger('runAction');
+  // Run flow. useActionTrigger, like useVariable, takes the value stored for
+  // the config field (see Sigma's actions-sample-plugin:
+  // `useActionTrigger(config.exampleTrigger)`), not the field name.
+  const runActionId =
+    typeof config?.runAction === 'string' ? config.runAction : '';
+  const triggerRunAction = useActionTrigger(runActionId);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
@@ -99,16 +103,33 @@ export default function App() {
         ? 'Select at least one column to run'
         : null;
 
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 4000);
+  }, []);
+
   const handleRun = useCallback(() => {
     if (runDisabledReason !== null) return;
     // Make sure the control holds the latest selection before the action
     // sequence reads it.
     writePayload(picker.payload);
-    triggerRunAction();
-    setToast('Action sequence triggered');
-    window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 4000);
-  }, [runDisabledReason, writePayload, picker.payload, triggerRunAction]);
+    if (runActionId) {
+      triggerRunAction();
+      showToast('Action sequence triggered');
+    } else {
+      // Nothing is attached to the "On run" trigger, so there's no sequence to
+      // fire — the columns are still written to the mapped control.
+      showToast('No run action is configured');
+    }
+  }, [
+    runDisabledReason,
+    writePayload,
+    picker.payload,
+    runActionId,
+    triggerRunAction,
+    showToast,
+  ]);
 
   const handleClearAll = useCallback(() => {
     for (const slot of slots) slot.clear();

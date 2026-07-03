@@ -90,7 +90,9 @@ consume it.
 
 The plugin cannot observe the action sequence's outcome. Clicking Run shows an
 "Action sequence triggered" toast; completion or errors surface in the
-workbook itself.
+workbook itself. If nothing is attached to the "On run" trigger, Run still
+writes the selected columns to the control and shows a "No run action is
+configured" toast instead.
 
 ## Mode A vs Mode B
 
