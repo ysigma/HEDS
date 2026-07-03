@@ -75,6 +75,12 @@ The selected column **ids** are also persisted into the plugin config
 (`client.config.set`), so the selection survives reloads even if column names
 or their order change.
 
+> **If the columns aren't being saved:** the plugin only writes once the
+> mapped control resolves. If the "Selected columns control" field is unmapped
+> — or points at a control that was deleted — the plugin skips the write and
+> shows an inline notice instead of erroring; map (or re-map) a text control to
+> that field to fix it.
+
 ### Consuming the output from an action sequence
 
 A typical wiring: the "On run" action sequence reads the text control's value

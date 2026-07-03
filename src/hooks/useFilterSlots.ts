@@ -89,6 +89,10 @@ export function useFilterSlot(
     (next: FilterValue[]) => {
       if (inPluginFiltering) {
         setLocalSelection(next);
+      } else if (variable === undefined) {
+        // The host has not published this control, so its binding is unmapped
+        // or stale; writing would raise a "variable not found" host error.
+        // Skip silently — the dropdown simply has nothing to drive.
       } else if (next.length === 0) {
         // Clearing the dropdown must clear the workbook control too.
         setVariable(null);
@@ -96,7 +100,7 @@ export function useFilterSlot(
         setVariable(...next);
       }
     },
-    [inPluginFiltering, setVariable],
+    [inPluginFiltering, variable, setVariable],
   );
 
   const clear = useCallback(() => setSelected([]), [setSelected]);

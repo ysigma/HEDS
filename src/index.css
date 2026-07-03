@@ -453,6 +453,16 @@ input[type='radio'] {
   outline-offset: 1px;
 }
 
+/* Config notice */
+
+.notice {
+  padding: 7px 12px;
+  font-size: 12.5px;
+  color: var(--warn);
+  background: #fffaf0;
+  border-bottom: 1px solid #f4e2c4;
+}
+
 /* Empty state */
 
 .empty-state {
