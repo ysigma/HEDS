@@ -23,7 +23,9 @@ export default function App() {
 
   const config = useConfig() as ExplorerConfig | undefined;
   const source = typeof config?.source === 'string' ? config.source : '';
-  const availableColumnIds = Array.isArray(config?.columns)
+  // The selected columns live in the `columns` config field, which the picker
+  // writes — this is also what tells Sigma which columns' data to stream.
+  const selectedColumnIds = Array.isArray(config?.columns)
     ? (config.columns.filter((id) => typeof id === 'string') as string[])
     : undefined;
 
@@ -53,10 +55,7 @@ export default function App() {
     [outputControlMapped, setOutputControl],
   );
 
-  const persistedIds = Array.isArray(config?.selectedColumnIds)
-    ? config.selectedColumnIds
-    : undefined;
-  const picker = useColumnPicker(columnsById, availableColumnIds, persistedIds);
+  const picker = useColumnPicker(columnsById, selectedColumnIds);
 
   const selectedColumns = useMemo(
     () => picker.columns.filter((column) => picker.selectedIds.has(column.id)),
@@ -153,23 +152,8 @@ export default function App() {
         <div className="empty-state">
           <p className="empty-state-title">Attach a table to begin</p>
           <p className="empty-state-hint">
-            Select this element, then choose a data source in the editor panel
-            and map the Columns field to the columns you want available.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!availableColumnIds || availableColumnIds.length === 0) {
-    return (
-      <div className="app" style={rootStyle}>
-        <div className="empty-state">
-          <p className="empty-state-title">Choose columns to expose</p>
-          <p className="empty-state-hint">
-            In the editor panel, map the Columns field to the source's columns
-            (select all to expose the whole table). Sigma only sends the plugin
-            data for the columns you declare here.
+            Select this element, then choose a data source in the editor panel.
+            Every column of the table becomes available to pick.
           </p>
         </div>
       </div>

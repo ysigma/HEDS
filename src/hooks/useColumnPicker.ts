@@ -6,7 +6,7 @@ import {
 } from '@sigmacomputing/plugin';
 
 export interface ColumnPicker {
-  /** The columns exposed to the plugin, in element order. */
+  /** Every column of the attached element, in element order. */
   columns: WorkbookElementColumn[];
   selectedIds: ReadonlySet<string>;
   selectedCount: number;
@@ -17,47 +17,40 @@ export interface ColumnPicker {
 }
 
 /**
- * Column selection for the picker. The available columns are those the data
- * source exposes to the plugin (the `columns` config); everything is selected
- * by default until the user narrows it. The selection is kept locally and
- * persisted into the plugin config so it survives reloads. The JSON payload is
- * derived and written by the caller, which holds the row data.
+ * Column selection for the picker. Every element column is available (from
+ * `useElementColumns`); ticking one writes it into the `columns` config field
+ * via `client.config.set`, which is what makes Sigma stream that column's data
+ * to the plugin. So the selection is the data request: pick a column and its
+ * data flows in for the preview and the JSON. The choice lives in the config,
+ * so it survives reloads.
  */
 export function useColumnPicker(
   columnsById: WorkbookElementColumns | undefined,
-  availableColumnIds: readonly string[] | undefined,
-  persistedIds: readonly string[] | undefined,
+  selectedColumnIds: readonly string[] | undefined,
 ): ColumnPicker {
   const plugin = usePlugin();
   const [localIds, setLocalIds] = useState<ReadonlySet<string> | undefined>();
 
-  // Only expose columns the source has declared to the plugin, in element order.
-  const columns = useMemo(() => {
-    if (!columnsById || !availableColumnIds) return [];
-    const available = new Set(availableColumnIds);
-    return Object.values(columnsById).filter((column) =>
-      available.has(column.id),
-    );
-  }, [columnsById, availableColumnIds]);
+  const columns = useMemo(
+    () => (columnsById ? Object.values(columnsById) : []),
+    [columnsById],
+  );
 
-  // Default to every available column selected; once the user edits, their
-  // persisted choice takes over. Local edits win and ids are pruned to what's
-  // still available.
+  // Local edits win over the config value; ids whose columns no longer exist
+  // are pruned (but not before columns have loaded).
   const selectedIds = useMemo<ReadonlySet<string>>(() => {
-    const base =
-      localIds ??
-      (persistedIds != null
-        ? new Set(persistedIds)
-        : new Set(columns.map((column) => column.id)));
+    const base = localIds ?? new Set(selectedColumnIds ?? []);
     if (columns.length === 0) return base;
     const valid = new Set(columns.map((column) => column.id));
     return new Set([...base].filter((id) => valid.has(id)));
-  }, [localIds, persistedIds, columns]);
+  }, [localIds, selectedColumnIds, columns]);
 
+  // Write the selection into the `columns` config field — this both persists
+  // the choice and tells Sigma which columns' data to stream to the plugin.
   const commit = useCallback(
     (next: ReadonlySet<string>) => {
       setLocalIds(next);
-      plugin.config.set({ selectedColumnIds: [...next] });
+      plugin.config.set({ columns: [...next] });
     },
     [plugin],
   );
