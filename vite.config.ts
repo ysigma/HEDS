@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
@@ -10,6 +11,16 @@ const DEFAULT_BASE = '/sigma-data-explorer-plugin/';
 export default defineConfig(({ command }) => ({
   plugins: [react()],
   base: command === 'build' ? (process.env.VITE_BASE_PATH ?? DEFAULT_BASE) : '/',
+  build: {
+    rollupOptions: {
+      // Two plugins from one repo: the data explorer at the root and the
+      // report builder at /report/. Both are static entry points.
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        report: fileURLToPath(new URL('./report/index.html', import.meta.url)),
+      },
+    },
+  },
   server: {
     port: 3000,
   },
