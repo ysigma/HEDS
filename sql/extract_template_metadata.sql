@@ -930,14 +930,16 @@ def main(session, template_id):
     rows, stats = extract_workbook_metadata(wb, wb_vals)
 
     extracted_at = _dt.datetime.now()
-    session.sql("BEGIN").collect()
+    # No explicit BEGIN/COMMIT here: this procedure is meant to be called in a
+    # loop by EXTRACT_ALL_TEMPLATE_METADATA, and a nested COMMIT would close the
+    # batch driver's cursor transaction and break the run. Each statement
+    # autocommits instead; the DELETE + re-INSERT is idempotent per template, so
+    # a failed write is reported and simply fixed by re-running.
     try:
         session.sql("DELETE FROM %s WHERE TEMPLATE_ID = ?" % METADATA_TABLE,
                     params=[template_id]).collect()
         inserted = insert_rows(session, template_id, rows, extracted_at)
-        session.sql("COMMIT").collect()
     except Exception as e:
-        session.sql("ROLLBACK").collect()
         return "ERROR: Failed to persist metadata for '%s': %s" % (template_id, e)
 
     summary = {
